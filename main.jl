@@ -313,23 +313,23 @@ function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, i
         right = i 
     end 
 
-    old_distances = D[current[left], current[left + 1]] + D[current[right], current[right -1]] 
-    new_distances = D[candidate[left], candidate[left + 1]] + D[candidate[right], candidate[right -1]]
+    old_distances = D[current[left], current[left+1]] + D[current[right], current[right-1]] 
+    new_distances = D[candidate[left], candidate[left+1]] + D[candidate[right], candidate[right-1]]
 
     # Se o índice mais à esquerda não for o primeiro, então considerar a distância entre left e left - 1
     if left > 1
-        old_distances += D[current[left], current[left - 1]]
-        new_distances += D[candidate[left], candidate[left - 1]]
+        old_distances += D[current[left], current[left-1]]
+        new_distances += D[candidate[left], candidate[left-1]]
     end
     # Se o índice mais à direita não for o último, então considerar a distância entre right e right + 1
     if right < length(current)
-        old_distances += D[current[right], current[right + 1]]
-        new_distances += D[candidate[right], candidate[right + 1]]
+        old_distances += D[current[right], current[right+1]]
+        new_distances += D[candidate[right], candidate[right+1]]
     end
 
     # A avaliação diferencial consiste em subtrair as distâncias antigas e somar as novas
     return current_cost - old_distances + new_distances
-
+end
 
 # ==============================================================================
 # FUNÇÃO: random_neighbor
@@ -361,7 +361,7 @@ function random_neighbor(order::Vector{Int}, precedences)
     pos = Dict(v => idx for (idx,v) in enumerate(new_order))
     for (a,b) in precedences
         if pos[a] >= pos[b]
-            return order, i, j  # Devolve solução original se violar pré-requisitos
+            return order, i, j # Devolve solução original se violar pré-requisitos
         end
     end
 

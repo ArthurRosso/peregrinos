@@ -285,6 +285,52 @@ function path_cost(order::Vector{Int}, D::Matrix{Int})
     return cost
 end
 
+
+# ==============================================================================
+# FUNÇÃO: differential_avaliation
+# ------------------------------------------------------------------------------
+# Realiza a avaliação diferencial para verificar o custo de uma solução vizinha
+#
+# Parâmetros:
+#   current - vetor atual com ordenação dos templos
+#   candidate - vetor candidato
+#   i - um dos índices escolhidos para swap na função random_neighbor
+#   j - o outro índice escolhido para swap
+#   current_cost - custo da solução atual
+#   D - matriz de distâncias
+#
+# Retorno:
+#   o custo do candidato
+# ==============================================================================
+function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, i::Int, j::Int, current_cost::Int, D::Matrix{Int})
+    
+    # Verifica qual é o índice mais à esquerda e qual é o índice mais à direita
+    if i < j
+        left = i
+        right = j
+    else 
+        left = j
+        right = i 
+    end 
+
+    old_distances = D[current[left], current[left + 1]] + D[current[right], current[right -1]] 
+    new_distances = D[candidate[left], candidate[left + 1]] + D[candidate[right], candidate[right -1]]
+
+    # Se o índice mais à esquerda não for o primeiro, então considerar a distância entre left e left - 1
+    if left > 1
+        old_distances += D[current[left], current[left - 1]]
+        new_distances += D[candidate[left], candidate[left - 1]]
+    end
+    # Se o índice mais à direita não for o último, então considerar a distância entre right e right + 1
+    if right < length(current)
+        old_distances += D[current[right], current[right + 1]]
+        new_distances += D[candidate[right], candidate[right + 1]]
+    end
+
+    # A avaliação diferencial consiste em subtrair as distâncias antigas e somar as novas
+    return current_cost - old_distances + new_distances
+
+
 # ==============================================================================
 # FUNÇÃO: random_neighbor
 # ------------------------------------------------------------------------------
@@ -315,11 +361,11 @@ function random_neighbor(order::Vector{Int}, precedences)
     pos = Dict(v => idx for (idx,v) in enumerate(new_order))
     for (a,b) in precedences
         if pos[a] >= pos[b]
-            return order  # Devolve solução original se violar pré-requisitos
+            return order, i, j  # Devolve solução original se violar pré-requisitos
         end
     end
 
-    return new_order
+    return new_order, i, j
 end
 
 # ==============================================================================
@@ -353,8 +399,8 @@ function lahc(D::Matrix{Int}, precedences, L::Int=50, max_iter::Int=10_000)
     # Loop principal do LAHC
     for it in 1:max_iter
         # Gera vizinho aleatório
-        candidate = random_neighbor(current, precedences)
-        candidate_cost = path_cost(candidate, D)
+        candidate, i, j = random_neighbor(current, precedences)
+        candidate_cost = differential_avaliation(current, candidate, i, j, current_cost, D)
 
         # Índice circular na lista de aceitação
         idx = (it % L) + 1

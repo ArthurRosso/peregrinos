@@ -49,7 +49,9 @@ end
 # Retorno:
 #   T - número de templos
 #   coords - vetor de tuplas com coordenadas (x,y) dos templos
-#   precedences - vetor de tuplas com pré-requisitos (a,b)
+#   before - dicionário que associa cada templo i com um vetor de templos que devem ser visitados antes de i
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser visitados depois de i
+#   precedences - o número de pré-requisitos
 # ==============================================================================
 function read_instance(path::String)
     open(path, "r") do io
@@ -67,16 +69,27 @@ function read_instance(path::String)
         # Lê número de pré-requisitos
         P = parse(Int, strip(readline(io)))
 
+        # Dicionário em que, apara cada templo i, retorna um vetor contendo os templos que devem 
+        # ser visitados depois de i
+        after = Dict{Int, Vector{Int}}()
+
+        # Dicionário em que, apara cada templo i, retorna um vetor contendo os templos que devem 
+        # ser visitados antes de i
+        before = Dict{Int, Vector{Int}}()
+
+        precedences = 0
+
         # Lê pré-requisitos
-        precedences = Vector{Tuple{Int,Int}}(undef, P)
         for i in 1:P
-            parts = split(strip(readline(io)))
-            a = parse(Int, parts[1])
-            b = parse(Int, parts[2])
-            precedences[i] = (a, b)
+            precedence = split(strip(readline(io)))
+            a = parse(Int, precedence[1])
+            b = parse(Int, precedence[2])
+            push!(get!(after, a, Int[]), b)
+            push!(get!(before, b, Int[]), a)
+            precedences += 1
         end
 
-        return T, coords, precedences
+        return T, coords, before, after, precedences
     end
 end
 
@@ -112,21 +125,22 @@ end
 #
 # Parâmetros:
 #   T - número de templos
-#   precedences - vetor de pré-requisitos
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser visitados depois de i
 #
 # Retorno:
 #   order - vetor com ordenação topológica dos templos
 # ==============================================================================
-function simple_topological_order(T, precedences)
-    # Construir lista de adjacência e graus de entrada
-    adj = [Int[] for _ in 1:T]
+function simple_topological_order(T, after)
+    # Construir lista com graus de adjacência (o número de templos que devem ser visitados antes
+    # do templo i)
     indeg = zeros(Int, T)
-    for (a,b) in precedences
-        push!(adj[a], b)
-        indeg[b] += 1
+    for vector in values(after)
+        for temple in vector
+            indeg[temple] += 1
+        end
     end
 
-    # Fila com nós sem predecessores
+    # Fila com templos sem predecessores
     queue = [i for i in 1:T if indeg[i] == 0]
     order = Int[]
 
@@ -136,7 +150,7 @@ function simple_topological_order(T, precedences)
         push!(order, v)
 
         # Atualiza graus dos vizinhos
-        for w in adj[v]
+        for w in get(after, v, Int[])
             indeg[w] -= 1
             if indeg[w] == 0
                 push!(queue, w)
@@ -152,6 +166,7 @@ function simple_topological_order(T, precedences)
 
     return order
 end
+
 
 # ==============================================================================
 # FUNÇÃO: choose_start
@@ -186,19 +201,19 @@ end
 #
 # Parâmetros:
 #   T - número de templos
-#   precedences - vetor de pré-requisitos
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser visitados depois de i
 #   D - matriz de distâncias
 #
 # Retorno:
 #   order - ordenação topológica gulosa dos templos
 # ==============================================================================
-function greedy_topological_order(T::Int, precedences::Vector{Tuple{Int,Int}}, D::Array{Int,2})
+function greedy_topological_order(T::Int, after, D::Array{Int,2})
     # Construir grafo de precedências
-    adj = [Int[] for _ in 1:T]
     indeg = zeros(Int, T)
-    for (a,b) in precedences
-        push!(adj[a], b)
-        indeg[b] += 1
+    for vector in values(after)
+        for temple in vector
+            indeg[temple] += 1
+        end
     end
 
     # Conjunto de nós disponíveis (grau de entrada zero)
@@ -222,7 +237,7 @@ function greedy_topological_order(T::Int, precedences::Vector{Tuple{Int,Int}}, D
     last = first
 
     # Atualiza graus dos vizinhos do primeiro nó
-    for w in adj[first]
+    for w in get(after, first, Int[])
         indeg[w] -= 1
         if indeg[w] == 0
             push!(available, w)
@@ -253,7 +268,7 @@ function greedy_topological_order(T::Int, precedences::Vector{Tuple{Int,Int}}, D
         last = best
 
         # Atualiza graus dos vizinhos
-        for w in adj[best]
+        for w in get(after, best, Int[])
             indeg[w] -= 1
             if indeg[w] == 0
                 push!(available, w)
@@ -264,6 +279,7 @@ function greedy_topological_order(T::Int, precedences::Vector{Tuple{Int,Int}}, D
 
     return order
 end
+
 
 # ==============================================================================
 # FUNÇÃO: path_cost
@@ -294,24 +310,18 @@ end
 # Parâmetros:
 #   current - vetor atual com ordenação dos templos
 #   candidate - vetor candidato
-#   i - um dos índices escolhidos para swap na função random_neighbor
-#   j - o outro índice escolhido para swap
+#   left - o índice modificado da esquerda
+#   right - o índice modificado da direta
 #   current_cost - custo da solução atual
 #   D - matriz de distâncias
 #
 # Retorno:
 #   o custo do candidato
 # ==============================================================================
-function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, i::Int, j::Int, current_cost::Int, D::Matrix{Int})
+function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, left::Int, right::Int, current_cost::Int, D::Matrix{Int})
     
-    # Verifica qual é o índice mais à esquerda e qual é o índice mais à direita
-    if i < j
-        left = i
-        right = j
-    else 
-        left = j
-        right = i 
-    end 
+    
+
 
     old_distances = D[current[left], current[left+1]] + D[current[right], current[right-1]] 
     new_distances = D[candidate[left], candidate[left+1]] + D[candidate[right], candidate[right-1]]
@@ -339,12 +349,15 @@ end
 #
 # Parâmetros:
 #   order - ordenação atual
-#   precedences - vetor de pré-requisitos
+#   before - dicionário que associa cada templo i com um vetor de templos que devem ser visitados antes de i
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser depois antes de i
 #
 # Retorno:
 #   new_order - nova ordenação (pode ser igual à original se troca for inválida)
+#   left - o índice de swap da esquerda
+#   right - o índice de swap da direita
 # ==============================================================================
-function random_neighbor(order::Vector{Int}, precedences)
+function random_neighbor(order::Vector{Int}, before, after)
     T = length(order)
     new_order = copy(order)
 
@@ -354,18 +367,36 @@ function random_neighbor(order::Vector{Int}, precedences)
         j = rand(1:T)
     end
 
-    # Troca os templos nas posições i e j
-    new_order[i], new_order[j] = new_order[j], new_order[i]
+    if i < j
+        left = i
+        right = j
+    else
+        left = j
+        right = i
+    end
+
+    # Troca os templos nas posições left e right
+    new_order[right], new_order[left] = new_order[left], new_order[right]
 
     # Verifica se a nova ordenação respeita todos os pré-requisitos
     pos = Dict(v => idx for (idx,v) in enumerate(new_order))
-    for (a,b) in precedences
-        if pos[a] >= pos[b]
+    temple_left = new_order[left]
+    temple_right = new_order[right]
+
+    # Templos que devem vir antes de temple_left
+    for temple in get(before, temple_left, Int[])
+        if pos[temple] > pos[temple_left]
+            return order, left, right # Devolve solução original se violar pré-requisitos
+        end
+    end
+    # Templos que devem vir depois de temple_right
+    for temple in get(after, temple_right, Int[])
+        if pos[temple] < pos[temple_right]
             return order, i, j # Devolve solução original se violar pré-requisitos
         end
     end
 
-    return new_order, i, j
+    return new_order, left, right
 end
 
 # ==============================================================================
@@ -375,7 +406,8 @@ end
 #
 # Parâmetros:
 #   D - matriz de distâncias T×T
-#   precedences - vetor de pares (a,b) representando pré-requisitos
+#   before - dicionário que associa cada templo i com um vetor de templos que devem ser visitados antes de i
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser visitados depois de i
 #   L - tamanho da lista de aceitação (default: 50)
 #   max_iter - número máximo de iterações (default: 10_000)
 #
@@ -383,11 +415,12 @@ end
 #   best - melhor ordenação encontrada
 #   best_cost - custo da melhor ordenação
 # ==============================================================================
-function lahc(D::Matrix{Int}, precedences, L::Int=50, max_iter::Int=10_000)
+function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
     T = size(D,1)
 
     # Gera solução inicial gulosa
-    current = greedy_topological_order(T, precedences, D)
+    current = greedy_topological_order(T, after, D)
+    #current = simple_topological_order(T, after)
     current_cost = path_cost(current, D)
 
     best = copy(current)
@@ -399,8 +432,8 @@ function lahc(D::Matrix{Int}, precedences, L::Int=50, max_iter::Int=10_000)
     # Loop principal do LAHC
     for it in 1:max_iter
         # Gera vizinho aleatório
-        candidate, i, j = random_neighbor(current, precedences)
-        candidate_cost = differential_avaliation(current, candidate, i, j, current_cost, D)
+        candidate, left, right = random_neighbor(current, before, after)
+        candidate_cost = differential_avaliation(current, candidate, left, right, current_cost, D)
 
         # Índice circular na lista de aceitação
         idx = (it % L) + 1
@@ -448,18 +481,19 @@ function main()
     Random.seed!(seed)
 
     # Lê e processa instância
-    T, coords, precedences = read_instance(path)
+    T, coords, before, after, precedences = read_instance(path)
     D = build_dist_matrix(T, coords)
 
     # Gera e avalia solução inicial
-    order = greedy_topological_order(T, precedences, D)
+    order = greedy_topological_order(T, after, D)
+    #order = simple_topological_order(T, after)
     cost = path_cost(order, D)
 
     println("="^50)
     println("PROBLEMA DE PEREGRINAÇÃO")
     println("="^50)
     println("Templos: $T")
-    println("Pré-requisitos: $(length(precedences))")
+    println("Pré-requisitos: $(precedences)")
     println("Semente: $seed")
     println("L: $L")
     println("Max Iter: $max_iter")
@@ -467,7 +501,7 @@ function main()
     println("Custo inicial: $cost")
 
     # Executa LAHC
-    best_order, best_cost = lahc(D, precedences, L, max_iter)
+    best_order, best_cost = lahc(D, before, after, L, max_iter)
 
     println("Custo final (LAHC): $best_cost")
     println("Melhoria: $(cost - best_cost) ($(round((cost - best_cost)/cost*100, digits=2))%)")

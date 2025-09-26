@@ -392,11 +392,35 @@ function random_neighbor(order::Vector{Int}, before, after)
     # Templos que devem vir depois de temple_right
     for temple in get(after, temple_right, Int[])
         if pos[temple] < pos[temple_right]
-            return order, i, j # Devolve solução original se violar pré-requisitos
+            return order, left, right # Devolve solução original se violar pré-requisitos
         end
     end
-
     return new_order, left, right
+end
+
+# ==============================================================================
+# FUNÇÃO: print_status
+# ------------------------------------------------------------------------------
+# Imprime no terminal o tempo desde o início da execução do algoritmo, o valor da
+# solução atual e uma representação da solução atual
+#
+# Parâmetros:
+#   t_start - tempo de início
+#   order - ordenação atual
+#   cost - custo da ordenação
+#
+# ==============================================================================
+function print_status(t_start, order, cost)
+    t_now = time()
+    t = round(t_now - t_start, digits = 2)
+    println("-"^50)
+    println("Tempo: $t segundos")
+    println("Custo: $cost")
+    T = length(order)
+    for i in 1:(T-1)
+        print("$(order[i]) -> ")
+    end
+    println(order[T])
 end
 
 # ==============================================================================
@@ -418,13 +442,16 @@ end
 function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
     T = size(D,1)
 
+    t_start = time()
     # Gera solução inicial gulosa
-    current = greedy_topological_order(T, after, D)
-    #current = simple_topological_order(T, after)
+    #current = greedy_topological_order(T, after, D)
+    current = simple_topological_order(T, after)
     current_cost = path_cost(current, D)
 
     best = copy(current)
     best_cost = current_cost
+
+    print_status(t_start, current, current_cost)
 
     # Inicializa lista de aceitação com custo atual
     costs = fill(current_cost, L)
@@ -451,9 +478,9 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
         if current_cost < best_cost
             best = copy(current)
             best_cost = current_cost
+            print_status(t_start, best, best_cost)
         end
     end
-
     return best, best_cost
 end
 
@@ -485,9 +512,12 @@ function main()
     D = build_dist_matrix(T, coords)
 
     # Gera e avalia solução inicial
-    order = greedy_topological_order(T, after, D)
-    #order = simple_topological_order(T, after)
+    #order = greedy_topological_order(T, after, D)
+    order = simple_topological_order(T, after)
     cost = path_cost(order, D)
+
+    # Executa LAHC
+    best_order, best_cost = lahc(D, before, after, L, max_iter)
 
     println("="^50)
     println("PROBLEMA DE PEREGRINAÇÃO")
@@ -499,10 +529,6 @@ function main()
     println("Max Iter: $max_iter")
     println("-"^50)
     println("Custo inicial: $cost")
-
-    # Executa LAHC
-    best_order, best_cost = lahc(D, before, after, L, max_iter)
-
     println("Custo final (LAHC): $best_cost")
     println("Melhoria: $(cost - best_cost) ($(round((cost - best_cost)/cost*100, digits=2))%)")
     println("="^50)

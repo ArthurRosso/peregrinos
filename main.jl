@@ -78,7 +78,6 @@ function read_instance(path::String)
         before = Dict{Int, Vector{Int}}()
 
         precedences = 0
-
         # Lê pré-requisitos
         for i in 1:P
             precedence = split(strip(readline(io)))
@@ -166,7 +165,6 @@ function simple_topological_order(T, after)
 
     return order
 end
-
 
 # ==============================================================================
 # FUNÇÃO: choose_start
@@ -302,50 +300,58 @@ function path_cost(order::Vector{Int}, D::Matrix{Int})
 end
 
 
+
 # ==============================================================================
-# FUNÇÃO: differential_avaliation
+# FUNÇÃO: is_valid
 # ------------------------------------------------------------------------------
-# Realiza a avaliação diferencial para verificar o custo de uma solução vizinha
+# Verifica se uma ordenação é válida. Para isso, analisa se todos os templos que devem ser
+# visitados antes de left estão à esquerda de left, e se todos os templos que devem ser visitados
+# depois de right à direita de right. Presume-se que que todos os templos que devem ser visitados 
+# depois de left estão à direita de left, e que todos os templos que devem ser visitados antes de
+# right estão à esquerda de right
+#
 #
 # Parâmetros:
-#   current - vetor atual com ordenação dos templos
-#   candidate - vetor candidato
-#   left - o índice modificado da esquerda
-#   right - o índice modificado da direta
-#   current_cost - custo da solução atual
-#   D - matriz de distâncias
+#   order - vetor com ordenação dos templos
+#   left - índice da posição esquerda da troca
+#   right - índice da posição direita da troca
+#   before - dicionário que associa cada templo i com um vetor de templos que devem ser visitados antes de i
+#   after - dicionário que associa cada templo i com um vetor de templos que devem ser depois antes de i
 #
 # Retorno:
-#   o custo do candidato
+#   true se a ordenação é válida, false caso contrário
 # ==============================================================================
-function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, left::Int, right::Int, current_cost::Int, D::Matrix{Int})
-    
-    
+function is_valid(order, left, right, before, after)
+    pos = Dict(v => idx for (idx,v) in enumerate(order))
+
+    temple_left = order[left]
+    temple_right = order[right]
 
 
-    old_distances = D[current[left], current[left+1]] + D[current[right], current[right-1]] 
-    new_distances = D[candidate[left], candidate[left+1]] + D[candidate[right], candidate[right-1]]
-
-    # Se o índice mais à esquerda não for o primeiro, então considerar a distância entre left e left - 1
-    if left > 1
-        old_distances += D[current[left], current[left-1]]
-        new_distances += D[candidate[left], candidate[left-1]]
-    end
-    # Se o índice mais à direita não for o último, então considerar a distância entre right e right + 1
-    if right < length(current)
-        old_distances += D[current[right], current[right+1]]
-        new_distances += D[candidate[right], candidate[right+1]]
+    # Templos que devem vir antes de temple_left
+    for temple in get(before, temple_left, Int[])
+        if pos[temple] > pos[temple_left]
+            return false
+        end
     end
 
-    # A avaliação diferencial consiste em subtrair as distâncias antigas e somar as novas
-    return current_cost - old_distances + new_distances
+    # Templos que devem vir depois de temple_right
+    for temple in get(after, temple_right, Int[])
+        if pos[temple] < pos[temple_right]
+                return false
+        end
+        break
+    end
+
+    return true
 end
 
+
 # ==============================================================================
-# FUNÇÃO: random_neighbor
+# FUNÇÃO: shake
 # ------------------------------------------------------------------------------
-# Gera um vizinho aleatório trocando dois templos na ordenação
-# A troca só é mantida se não violar pré-requisitos
+# Produz uma solução tentando realizar 10000 swaps de duas posições aleatórias 
+# de uma solução a fim de produzir uma nova solução válida
 #
 # Parâmetros:
 #   order - ordenação atual
@@ -353,49 +359,39 @@ end
 #   after - dicionário que associa cada templo i com um vetor de templos que devem ser depois antes de i
 #
 # Retorno:
-#   new_order - nova ordenação (pode ser igual à original se troca for inválida)
-#   left - o índice de swap da esquerda
-#   right - o índice de swap da direita
+#   new_order - nova ordenação
 # ==============================================================================
-function random_neighbor(order::Vector{Int}, before, after)
+function shake(order, before, after)
+    
     T = length(order)
     new_order = copy(order)
 
-    # Seleciona dois índices aleatórios distintos
-    i, j = rand(1:T), rand(1:T)
-    while i == j
-        j = rand(1:T)
-    end
-
-    if i < j
-        left = i
-        right = j
-    else
-        left = j
-        right = i
-    end
-
-    # Troca os templos nas posições left e right
-    new_order[right], new_order[left] = new_order[left], new_order[right]
-
-    # Verifica se a nova ordenação respeita todos os pré-requisitos
-    pos = Dict(v => idx for (idx,v) in enumerate(new_order))
-    temple_left = new_order[left]
-    temple_right = new_order[right]
-
-    # Templos que devem vir antes de temple_left
-    for temple in get(before, temple_left, Int[])
-        if pos[temple] > pos[temple_left]
-            return order, left, right # Devolve solução original se violar pré-requisitos
+    for i in 1:10000
+        j, k = rand(1:T), rand(1:T)
+        while j == k
+            k = rand(1:T)
         end
-    end
-    # Templos que devem vir depois de temple_right
-    for temple in get(after, temple_right, Int[])
-        if pos[temple] < pos[temple_right]
-            return order, left, right # Devolve solução original se violar pré-requisitos
+
+        if j < k
+            left = j
+            right = k
+        else
+            left = k
+            right = j
         end
+
+        # Troca os templos nas posições left e right
+        new_order[right], new_order[left] = new_order[left], new_order[right]
+
+        # Se a troca for inválida, então desfazer a troca
+        if !is_valid(new_order, left, right, before, after)
+            new_order[right], new_order[left] = new_order[left], new_order[right]
+        end
+
     end
-    return new_order, left, right
+
+    return new_order
+
 end
 
 # ==============================================================================
@@ -421,6 +417,42 @@ function print_status(t_start, order, cost)
         print("$(order[i]) -> ")
     end
     println(order[T])
+end
+
+# ==============================================================================
+# FUNÇÃO: differential_avaliation
+# ------------------------------------------------------------------------------
+# Realiza a avaliação diferencial para verificar o custo de uma solução vizinha
+#
+# Parâmetros:
+#   current - vetor atual com ordenação dos templos
+#   candidate - vetor candidato
+#   left - o índice modificado da esquerda
+#   right - o índice modificado da direta
+#   current_cost - custo da solução atual
+#   D - matriz de distâncias
+#
+# Retorno:
+#   o custo do candidato
+# ==============================================================================
+function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, left::Int, right::Int, current_cost::Int, D::Matrix{Int})
+    
+    old_distances = D[current[left], current[left+1]] + D[current[right], current[right-1]] 
+    new_distances = D[candidate[left], candidate[left+1]] + D[candidate[right], candidate[right-1]]
+
+    # Se o índice mais à esquerda não for o primeiro, então considerar a distância entre left e left - 1
+    if left > 1
+        old_distances += D[current[left], current[left-1]]
+        new_distances += D[candidate[left], candidate[left-1]]
+    end
+    # Se o índice mais à direita não for o último, então considerar a distância entre right e right + 1
+    if right < length(current)
+        old_distances += D[current[right], current[right+1]]
+        new_distances += D[candidate[right], candidate[right+1]]
+    end
+
+    # A avaliação diferencial consiste em subtrair as distâncias antigas e somar as novas
+    return current_cost - old_distances + new_distances
 end
 
 # ==============================================================================
@@ -456,32 +488,112 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
     # Inicializa lista de aceitação com custo atual
     costs = fill(current_cost, L)
 
-    # Loop principal do LAHC
-    for it in 1:max_iter
-        # Gera vizinho aleatório
-        candidate, left, right = random_neighbor(current, before, after)
-        candidate_cost = differential_avaliation(current, candidate, left, right, current_cost, D)
+    it = max_iter # Controla a quantidade de iterações
+    neighbor = copy(current) 
+    i_costs = 1 # variável que itera pelo histórico de custos
+    neighborhood = collect(1:T) # vetor auxiliar para percorrer a vizinhança
+    shuffle!(neighborhood)
+    first_position = 1
+    second_position = 2
+    while it != 0
 
-        # Índice circular na lista de aceitação
-        idx = (it % L) + 1
+        # Geração de um vizinho por swap entre dois templos nas pos
+        left = neighborhood[first_position]
+        right = neighborhood[second_position]
 
-        # Regra de aceitação do LAHC
-        if candidate_cost <= current_cost || candidate_cost <= costs[idx]
-            current = candidate
-            current_cost = candidate_cost
+        if left > right
+            right, left = left, right
+        end 
+        neighbor[right], neighbor[left] = neighbor[left], neighbor[right]
+        accepted = false
+
+        # Decremento das iterações (as iterações são referentes à geração de vizinhos, 
+        # tanto inválidos quanto válidos)
+        it -= 1
+
+        # Se o vizinho é válido, fazer os testes do LAHC
+        if is_valid(neighbor, left, right, before, after)
+            #Cálculo do custo do vizinho
+            neighbor_cost = differential_avaliation(current, neighbor, left, right, current_cost, D)
+
+            # Se for aceito na regra de aceitação do LAHC
+            if neighbor_cost < current_cost || neighbor_cost < costs[i_costs]
+                
+                accepted = true
+                
+                # Atualiza o current
+                current[right], current[left] = current[left], current[right]
+                current_cost = neighbor_cost
+
+                # Atualiza o histórico
+                costs[i_costs] = current_cost
+                i_costs = (i_costs % L) + 1
+
+                # Reinicia a vizinhança
+                shuffle!(neighborhood)
+                first_position = 1
+                second_position = 2
+
+                #OBS: não é necessário fazer copyto!(neighbor, current), uma vez que neighbor == current
+
+                 # Se currenct_cost < best_cost, atualiza o best
+                if current_cost < best_cost
+                    copyto!(best, current)
+                    best_cost = current_cost
+                    print_status(t_start, best, best_cost)
+                end
+            end
         end
 
-        # Atualiza lista de aceitação
-        costs[idx] = current_cost
+        # Se o vizinho não foi aceito (por ser inválido ou por falhar na regra do LAHC),
+        # preparamos para gerar um novo vizinho
+        if !accepted
+                
+            # Se first_position < T - 1, então a vizinhança de current não acabou
+            if first_position < T - 1
+                # Desfaz o vizinho (na prática, neighbor volta a ser igual a current)
+                neighbor[right], neighbor[left] = neighbor[left], neighbor[right]
 
-        # Atualiza melhor solução global
-        if current_cost < best_cost
-            best = copy(current)
-            best_cost = current_cost
-            print_status(t_start, best, best_cost)
+                # Se second_position < T, então second_position pode ser incrementado 
+                if second_position < T
+                    second_position += 1
+                # Se second position == T, então first_position deve ser incrementado e second_position = first_position + 1
+                else
+                    first_position += 1
+                    second_position = first_position + 1
+                end
+            # Se first_position == T - 1, então a vizinhança de current acabou
+            else
+                # Como a vizinhança de current acabou, current é um mínimo local. 
+                # Para escapar desse mínimo, vamos fazer um shake
+                current = shake(current, before, after)
+                current_cost = path_cost(current, D)
+                copyto!(neighbor, current) 
+
+                # Se current_cost < best_cost, atualiza o best
+                if current_cost < best_cost
+                    copyto!(best, current)
+                    best_cost = current_cost
+                    print_status(t_start, best, best_cost)
+                end
+
+                # Reinicia o histórico
+                costs[i_costs] = current_cost
+                i_costs = 1
+                costs = fill(current_cost, L)
+
+                # Reinicia a vizinhança
+                shuffle!(neighborhood)
+                first_position = 1
+                second_position = 2
+            end
         end
+            
     end
+
+    # Após as iterações acabarem, retornara melhor solução e seu custo
     return best, best_cost
+
 end
 
 # ==============================================================================

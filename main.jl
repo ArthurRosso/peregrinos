@@ -77,7 +77,6 @@ function read_instance(path::String)
         # ser visitados antes de i
         before = Dict{Int, Vector{Int}}()
 
-        precedences = 0
         # Lê pré-requisitos
         for i in 1:P
             precedence = split(strip(readline(io)))
@@ -85,35 +84,10 @@ function read_instance(path::String)
             b = parse(Int, precedence[2])
             push!(get!(after, a, Int[]), b)
             push!(get!(before, b, Int[]), a)
-            precedences += 1
         end
 
-        return T, coords, before, after, precedences
+        return T, coords, before, after, P
     end
-end
-
-# ==============================================================================
-# FUNÇÃO: build_dist_matrix
-# ------------------------------------------------------------------------------
-# Constrói a matriz de distâncias entre todos os pares de templos
-#
-# Parâmetros:
-#   T - número de templos
-#   coords - vetor de coordenadas dos templos
-#
-# Retorno:
-#   D - matriz T×T com distâncias entre templos
-# ==============================================================================
-function build_dist_matrix(T::Int, coords::Vector{Tuple{Int,Int}})
-    D = Array{Int}(undef, T, T)
-    for i in 1:T
-        xi, yi = coords[i]
-        for j in 1:T
-            xj, yj = coords[j]
-            D[i,j] = dist_floor(xi, yi, xj, yj)
-        end
-    end
-    return D
 end
 
 # ==============================================================================
@@ -167,133 +141,23 @@ function simple_topological_order(T, after)
 end
 
 # ==============================================================================
-# FUNÇÃO: choose_start
-# ------------------------------------------------------------------------------
-# Escolhe o nó inicial entre os disponíveis baseado na soma das distâncias
-#
-# Parâmetros:
-#   available - vetor de nós disponíveis
-#   D - matriz de distâncias
-#
-# Retorno:
-#   best - nó com menor soma de distâncias para todos os outros
-# ==============================================================================
-function choose_start(available::Vector{Int}, D::Array{Int,2})
-    best = available[1]
-    bestscore = sum(D[best, :])
-    for v in available
-        s = sum(D[v, :])
-        if s < bestscore || (s == bestscore && v < best)
-            best = v
-            bestscore = s
-        end
-    end
-    return best
-end
-
-# ==============================================================================
-# FUNÇÃO: greedy_topological_order
-# ------------------------------------------------------------------------------
-# Gera uma ordenação topológica gulosa considerando distâncias entre templos
-# Usa algoritmo de Kahn com seleção gulosa baseada na distância ao último templo
-#
-# Parâmetros:
-#   T - número de templos
-#   after - dicionário que associa cada templo i com um vetor de templos que devem ser visitados depois de i
-#   D - matriz de distâncias
-#
-# Retorno:
-#   order - ordenação topológica gulosa dos templos
-# ==============================================================================
-function greedy_topological_order(T::Int, after, D::Array{Int,2})
-    # Construir grafo de precedências
-    indeg = zeros(Int, T)
-    for vector in values(after)
-        for temple in vector
-            indeg[temple] += 1
-        end
-    end
-
-    # Conjunto de nós disponíveis (grau de entrada zero)
-    available = Int[]
-    for v in 1:T
-        if indeg[v] == 0
-            push!(available, v)
-        end
-    end
-    sort!(available)  # Ordem determinística inicial
-
-    order = Int[]
-
-    # Escolhe primeiro nó baseado na soma de distâncias
-    if isempty(available)
-        error("Instância inválida: ciclo de precedências detectado")
-    end
-    first = choose_start(available, D)
-    deleteat!(available, findfirst(==(first), available))
-    push!(order, first)
-    last = first
-
-    # Atualiza graus dos vizinhos do primeiro nó
-    for w in get(after, first, Int[])
-        indeg[w] -= 1
-        if indeg[w] == 0
-            push!(available, w)
-        end
-    end
-    sort!(available)
-
-    # Loop principal: seleção gulosa baseada na distância ao último templo
-    while length(order) < T
-        if isempty(available)
-            error("Ciclo detectado: impossível completar ordenação topológica")
-        end
-
-        # Escolhe o nó disponível mais próximo do último templo
-        best = available[1]
-        bestdist = D[last, best]
-        for v in available
-            d = D[last, v]
-            if d < bestdist || (d == bestdist && v < best)
-                best = v
-                bestdist = d
-            end
-        end
-
-        # Adiciona nó selecionado à ordenação
-        deleteat!(available, findfirst(==(best), available))
-        push!(order, best)
-        last = best
-
-        # Atualiza graus dos vizinhos
-        for w in get(after, best, Int[])
-            indeg[w] -= 1
-            if indeg[w] == 0
-                push!(available, w)
-            end
-        end
-        sort!(available)
-    end
-
-    return order
-end
-
-# ==============================================================================
 # FUNÇÃO: path_cost
 # ------------------------------------------------------------------------------
 # Calcula o custo total de uma ordenação linear de templos
 #
 # Parâmetros:
 #   order - vetor com ordenação dos templos
-#   D - matriz de distâncias
+#   coords - lista de tuplas de coordenadas
 #
 # Retorno:
 #   cost - custo total do caminho (soma das distâncias entre templos consecutivos)
 # ==============================================================================
-function path_cost(order::Vector{Int}, D::Matrix{Int})
+function path_cost(order::Vector{Int}, coords)
     cost = 0
     for i in 1:(length(order)-1)
-        cost += D[order[i], order[i+1]]
+        t1 = order[i]
+        t2 = order[i + 1]
+        cost += dist_floor(coords[t1][1], coords[t1][2], coords[t2][1], coords[t2][2])
     end
     return cost
 end
@@ -336,7 +200,6 @@ function is_valid(order, positions, left, right, before, after)
         if positions[temple] < positions[temple_right]
                 return false
         end
-        break
     end
 
     return true
@@ -380,7 +243,7 @@ function shake(order, positions, before, after)
         positions[order[left]], positions[order[right]] = left, right
 
         # Se a troca for inválida, então desfazer a troca
-        if !is_valid(order, left, right, before, after)
+        if !is_valid(order, positions, left, right, before, after)
             order[right], order[left] = order[left], order[right]
             positions[order[left]], positions[order[right]] = left, right
         end
@@ -430,20 +293,35 @@ end
 # Retorno:
 #   o custo do candidato
 # ==============================================================================
-function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, left::Int, right::Int, current_cost::Int, D::Matrix{Int})
+function differential_avaliation(current::Vector{Int}, candidate::Vector{Int}, left::Int, right::Int, current_cost::Int, coords)
     
-    old_distances = D[current[left], current[left+1]] + D[current[right], current[right-1]] 
-    new_distances = D[candidate[left], candidate[left+1]] + D[candidate[right], candidate[right-1]]
+    coords_T1 = coords[current[left]] # coords_T1 == coords[candidate[right]]
+    coords_T2 = coords[current[right]] # coords_T2 == coords[candidate[left]]
+
+    if right - left != 1
+        coords_after_left = coords[current[left+1]] # coords_after_left == coords[candidate[left+1]]
+        coords_before_right = coords[current[right-1]] # coords_before_right == coords[candidate[right-1]]
+    
+        old_distances = dist_floor(coords_T1[1], coords_T1[2], coords_after_left[1], coords_after_left[2]) + dist_floor(coords_T2[1], coords_T2[2], coords_before_right[1], coords_before_right[2])
+        new_distances = dist_floor(coords_T2[1], coords_T2[2], coords_after_left[1], coords_after_left[2]) + dist_floor(coords_T1[1], coords_T1[2], coords_before_right[1], coords_before_right[2])
+    else
+        old_distances = 0
+        new_distances = 0
+    end
 
     # Se o índice mais à esquerda não for o primeiro, então considerar a distância entre left e left - 1
     if left > 1
-        old_distances += D[current[left], current[left-1]]
-        new_distances += D[candidate[left], candidate[left-1]]
+        coords_before_left = coords[current[left-1]] # coords_before_left == coords[candidate[left-1]]
+
+        old_distances += dist_floor(coords_T1[1], coords_T1[2], coords_before_left[1], coords_before_left[2])
+        new_distances += dist_floor(coords_T2[1], coords_T2[2], coords_before_left[1], coords_before_left[2])
     end
     # Se o índice mais à direita não for o último, então considerar a distância entre right e right + 1
     if right < length(current)
-        old_distances += D[current[right], current[right+1]]
-        new_distances += D[candidate[right], candidate[right+1]]
+        coords_after_right = coords[current[right+1]] # coords_after_right == coords[candidate[right+1]]
+
+        old_distances += dist_floor(coords_T2[1], coords_T2[2], coords_after_right[1], coords_after_right[2])
+        new_distances += dist_floor(coords_T1[1], coords_T1[2], coords_after_right[1], coords_after_right[2])
     end
 
     # A avaliação diferencial consiste em subtrair as distâncias antigas e somar as novas
@@ -466,14 +344,17 @@ end
 #   best - melhor ordenação encontrada
 #   best_cost - custo da melhor ordenação
 # ==============================================================================
-function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
-    T = size(D,1)
+function lahc(coords, before, after, L::Int=50, max_iter::Int=10_000)
+    T = length(coords)
 
     t_start = time()
     # Gera solução inicial gulosa
     #current = greedy_topological_order(T, after, D)
     current = simple_topological_order(T, after)
-    current_cost = path_cost(current, D)
+    current_cost = path_cost(current, coords)
+
+    initial = copy(current)
+    initial_cost = current_cost
 
     positions_current = Vector{Int}(undef, T) # vetor auxiliar que serve para indicar a posição de cada templo em uma ordem
     for i in 1:T
@@ -518,7 +399,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
         # Se o vizinho é válido, fazer os testes do LAHC
         if is_valid(neighbor, positions_neighbor, left, right, before, after)
             #Cálculo do custo do vizinho
-            neighbor_cost = differential_avaliation(current, neighbor, left, right, current_cost, D)
+            neighbor_cost = differential_avaliation(current, neighbor, left, right, current_cost, coords)
 
             # Se for aceito na regra de aceitação do LAHC
             if neighbor_cost < current_cost || neighbor_cost < costs[i_costs]
@@ -541,7 +422,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
 
                 #OBS: não é necessário fazer copyto!(neighbor, current), uma vez que neighbor == current
 
-                 # Se currenct_cost < best_cost, atualiza o best
+                 # Se current_cost < best_cost, atualiza o best
                 if current_cost < best_cost
                     copyto!(best, current)
                     best_cost = current_cost
@@ -573,10 +454,9 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
                 # Como a vizinhança de current acabou, current é um mínimo local. 
                 # Para escapar desse mínimo, vamos fazer um shake
                 shake(current, positions_current, before, after)
-                current_cost = path_cost(current, D)
+                current_cost = path_cost(current, coords)
                 copyto!(neighbor, current) 
                 copyto!(positions_neighbor, positions_current)
-                println("shake")
 
                 # Se current_cost < best_cost, atualiza o best
                 if current_cost < best_cost
@@ -599,8 +479,11 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
             
     end
 
+    t_end = time()
+    duration = round(t_end - t_start, digits = 2)
+
     # Após as iterações acabarem, retornara melhor solução e seu custo
-    return best, best_cost
+    return initial, initial_cost, best, best_cost, duration
 
 end
 
@@ -629,15 +512,9 @@ function main()
 
     # Lê e processa instância
     T, coords, before, after, precedences = read_instance(path)
-    D = build_dist_matrix(T, coords)
-
-    # Gera e avalia solução inicial
-    #order = greedy_topological_order(T, after, D)
-    order = simple_topological_order(T, after)
-    cost = path_cost(order, D)
 
     # Executa LAHC
-    best_order, best_cost = lahc(D, before, after, L, max_iter)
+    initial_order, initial_cost, best_order, best_cost, duration = lahc(coords, before, after, L, max_iter)
 
     println("="^50)
     println("PROBLEMA DE PEREGRINAÇÃO")
@@ -648,9 +525,10 @@ function main()
     println("L: $L")
     println("Max Iter: $max_iter")
     println("-"^50)
-    println("Custo inicial: $cost")
+    println("Custo inicial: $initial_cost")
     println("Custo final (LAHC): $best_cost")
-    println("Melhoria: $(cost - best_cost) ($(round((cost - best_cost)/cost*100, digits=2))%)")
+    println("Melhoria: $(initial_cost - best_cost) ($(round((initial_cost - best_cost)/initial_cost*100, digits=2))%)")
+    println("Tempo de execução: $duration segundos")
     println("="^50)
 end
 

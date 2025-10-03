@@ -278,7 +278,6 @@ function greedy_topological_order(T::Int, after, D::Array{Int,2})
     return order
 end
 
-
 # ==============================================================================
 # FUNÇÃO: path_cost
 # ------------------------------------------------------------------------------
@@ -299,8 +298,6 @@ function path_cost(order::Vector{Int}, D::Matrix{Int})
     return cost
 end
 
-
-
 # ==============================================================================
 # FUNÇÃO: is_valid
 # ------------------------------------------------------------------------------
@@ -313,6 +310,7 @@ end
 #
 # Parâmetros:
 #   order - vetor com ordenação dos templos
+#   positions - vetor que indica qual posição o elemento i ocupa no vetor order
 #   left - índice da posição esquerda da troca
 #   right - índice da posição direita da troca
 #   before - dicionário que associa cada templo i com um vetor de templos que devem ser visitados antes de i
@@ -321,23 +319,21 @@ end
 # Retorno:
 #   true se a ordenação é válida, false caso contrário
 # ==============================================================================
-function is_valid(order, left, right, before, after)
-    pos = Dict(v => idx for (idx,v) in enumerate(order))
+function is_valid(order, positions, left, right, before, after)
 
     temple_left = order[left]
     temple_right = order[right]
 
-
     # Templos que devem vir antes de temple_left
     for temple in get(before, temple_left, Int[])
-        if pos[temple] > pos[temple_left]
+        if positions[temple] > positions[temple_left]
             return false
         end
     end
 
     # Templos que devem vir depois de temple_right
     for temple in get(after, temple_right, Int[])
-        if pos[temple] < pos[temple_right]
+        if positions[temple] < positions[temple_right]
                 return false
         end
         break
@@ -361,10 +357,9 @@ end
 # Retorno:
 #   new_order - nova ordenação
 # ==============================================================================
-function shake(order, before, after)
+function shake(order, positions, before, after)
     
     T = length(order)
-    new_order = copy(order)
 
     for i in 1:10000
         j, k = rand(1:T), rand(1:T)
@@ -381,16 +376,16 @@ function shake(order, before, after)
         end
 
         # Troca os templos nas posições left e right
-        new_order[right], new_order[left] = new_order[left], new_order[right]
+        order[right], order[left] = order[left], order[right]
+        positions[order[left]], positions[order[right]] = left, right
 
         # Se a troca for inválida, então desfazer a troca
-        if !is_valid(new_order, left, right, before, after)
-            new_order[right], new_order[left] = new_order[left], new_order[right]
+        if !is_valid(order, left, right, before, after)
+            order[right], order[left] = order[left], order[right]
+            positions[order[left]], positions[order[right]] = left, right
         end
 
     end
-
-    return new_order
 
 end
 
@@ -480,6 +475,11 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
     current = simple_topological_order(T, after)
     current_cost = path_cost(current, D)
 
+    positions_current = Vector{Int}(undef, T) # vetor auxiliar que serve para indicar a posição de cada templo em uma ordem
+    for i in 1:T
+        positions_current[current[i]] = i
+    end
+
     best = copy(current)
     best_cost = current_cost
 
@@ -490,6 +490,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
 
     it = max_iter # Controla a quantidade de iterações
     neighbor = copy(current) 
+    positions_neighbor = copy(positions_current)
     i_costs = 1 # variável que itera pelo histórico de custos
     neighborhood = collect(1:T) # vetor auxiliar para percorrer a vizinhança
     shuffle!(neighborhood)
@@ -505,6 +506,9 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
             right, left = left, right
         end 
         neighbor[right], neighbor[left] = neighbor[left], neighbor[right]
+        # Atualiza o vetor de posições do vizinho
+        positions_neighbor[neighbor[left]], positions_neighbor[neighbor[right]] = left, right
+        
         accepted = false
 
         # Decremento das iterações (as iterações são referentes à geração de vizinhos, 
@@ -512,7 +516,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
         it -= 1
 
         # Se o vizinho é válido, fazer os testes do LAHC
-        if is_valid(neighbor, left, right, before, after)
+        if is_valid(neighbor, positions_neighbor, left, right, before, after)
             #Cálculo do custo do vizinho
             neighbor_cost = differential_avaliation(current, neighbor, left, right, current_cost, D)
 
@@ -523,6 +527,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
                 
                 # Atualiza o current
                 current[right], current[left] = current[left], current[right]
+                positions_current[current[left]], positions_current[current[right]] = left, right
                 current_cost = neighbor_cost
 
                 # Atualiza o histórico
@@ -553,6 +558,7 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
             if first_position < T - 1
                 # Desfaz o vizinho (na prática, neighbor volta a ser igual a current)
                 neighbor[right], neighbor[left] = neighbor[left], neighbor[right]
+                positions_neighbor[neighbor[left]], positions_neighbor[neighbor[right]] = left, right
 
                 # Se second_position < T, então second_position pode ser incrementado 
                 if second_position < T
@@ -566,9 +572,11 @@ function lahc(D::Matrix{Int}, before, after, L::Int=50, max_iter::Int=10_000)
             else
                 # Como a vizinhança de current acabou, current é um mínimo local. 
                 # Para escapar desse mínimo, vamos fazer um shake
-                current = shake(current, before, after)
+                shake(current, positions_current, before, after)
                 current_cost = path_cost(current, D)
                 copyto!(neighbor, current) 
+                copyto!(positions_neighbor, positions_current)
+                println("shake")
 
                 # Se current_cost < best_cost, atualiza o best
                 if current_cost < best_cost
